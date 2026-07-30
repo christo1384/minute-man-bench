@@ -137,6 +137,23 @@
   .flagcount{ font-weight:700; }
   .flagcount.hasflags{ color:var(--hazard-deep); }
 
+  .setup-banner{
+    background:#fbe9de; border:2px solid var(--hazard); border-radius:10px;
+    padding:18px 22px; margin-bottom:22px; display:none;
+  }
+  .setup-banner.show{ display:block; }
+  .setup-banner h3{
+    margin:0 0 8px; font-family:var(--display); font-size:20px; text-transform:uppercase;
+    letter-spacing:0.03em; color:var(--hazard-deep);
+  }
+  .setup-banner p{ margin:0 0 14px; font-size:15.5px; color:var(--ink); }
+  .setup-banner button{
+    background:var(--hazard); color:#fff; border:none; border-radius:8px;
+    font-family:var(--display); font-size:17px; text-transform:uppercase; letter-spacing:0.03em;
+    padding:13px 24px; cursor:pointer;
+  }
+  .setup-banner button:hover{ background:var(--hazard-deep); }
+
   .modal-backdrop{
     position:fixed; inset:0; background:rgba(20,20,15,0.55); display:none;
     align-items:center; justify-content:center; z-index:50;
@@ -162,6 +179,13 @@
 </header>
 
 <main>
+
+  <div class="setup-banner" id="setupBanner">
+    <h3>One-time setup needed</h3>
+    <p>This computer doesn't have the Minute Man API key yet, so the Run button won't work until it's added.
+       You only need to do this once — the browser remembers it afterwards. If you don't have the key, ask Chris.</p>
+    <button id="bannerSetupBtn">Add the API key</button>
+  </div>
 
   <div class="grid">
 
@@ -333,10 +357,23 @@ $('modalCancel').addEventListener('click', () => modalBackdrop.classList.remove(
 $('modalSave').addEventListener('click', () => {
   localStorage.setItem('mm_bench_api_key', $('apiKeyInput').value.trim());
   modalBackdrop.classList.remove('open');
-  setStatus('API key saved to this browser.', false);
+  refreshSetupBanner();
+  setStatus('API key saved to this browser. You can run a transcript now.', false);
 });
 
 function getApiKey(){ return localStorage.getItem('mm_bench_api_key') || ''; }
+
+const setupBanner = $('setupBanner');
+function refreshSetupBanner(){
+  if (getApiKey()) setupBanner.classList.remove('show');
+  else setupBanner.classList.add('show');
+}
+$('bannerSetupBtn').addEventListener('click', () => {
+  $('apiKeyInput').value = '';
+  modalBackdrop.classList.add('open');
+  $('apiKeyInput').focus();
+});
+refreshSetupBanner();
 
 function setStatus(msg, isErr){
   const el = $('status');
