@@ -175,17 +175,9 @@
 
 <header>
   <div class="title">Minute Man <small>Paraphrasing bench — Stage 1 tuning</small></div>
-  <button id="gear" title="API key settings">⚙</button>
 </header>
 
 <main>
-
-  <div class="setup-banner" id="setupBanner">
-    <h3>One-time setup needed</h3>
-    <p>This computer doesn't have the Minute Man API key yet, so the Run button won't work until it's added.
-       You only need to do this once — the browser remembers it afterwards. If you don't have the key, ask Chris.</p>
-    <button id="bannerSetupBtn">Add the API key</button>
-  </div>
 
   <div class="grid">
 
@@ -258,18 +250,6 @@
 
 </main>
 
-<!-- API key modal -->
-<div class="modal-backdrop" id="modalBackdrop">
-  <div class="modal">
-    <h3>API key</h3>
-    <p>Pasted once, kept only in this browser (local storage) — never written into this shared file.</p>
-    <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-    <div class="modal-actions">
-      <button class="secondary" id="modalCancel">Cancel</button>
-      <button class="primary" style="width:auto;" id="modalSave">Save</button>
-    </div>
-  </div>
-</div>
 
 <script>
 const ENGINE_PROMPT = `You convert a raw toolbox talk (TBT) transcript from an NZ industrial/
@@ -347,33 +327,10 @@ function renderLevel(){
 levelSlider.addEventListener('input', renderLevel);
 renderLevel();
 
-// --- API key modal ---
-const modalBackdrop = $('modalBackdrop');
-$('gear').addEventListener('click', () => {
-  $('apiKeyInput').value = localStorage.getItem('mm_bench_api_key') || '';
-  modalBackdrop.classList.add('open');
-});
-$('modalCancel').addEventListener('click', () => modalBackdrop.classList.remove('open'));
-$('modalSave').addEventListener('click', () => {
-  localStorage.setItem('mm_bench_api_key', $('apiKeyInput').value.trim());
-  modalBackdrop.classList.remove('open');
-  refreshSetupBanner();
-  setStatus('API key saved to this browser. You can run a transcript now.', false);
-});
-
-function getApiKey(){ return localStorage.getItem('mm_bench_api_key') || ''; }
-
-const setupBanner = $('setupBanner');
-function refreshSetupBanner(){
-  if (getApiKey()) setupBanner.classList.remove('show');
-  else setupBanner.classList.add('show');
-}
-$('bannerSetupBtn').addEventListener('click', () => {
-  $('apiKeyInput').value = '';
-  modalBackdrop.classList.add('open');
-  $('apiKeyInput').focus();
-});
-refreshSetupBanner();
+// --- Relay ---
+// The Anthropic key lives server-side on the relay Worker. No key is ever
+// handled by this page or stored in the browser.
+const RELAY_URL = 'https://minute-man-relay.crsroe.workers.dev/';
 
 function setStatus(msg, isErr){
   const el = $('status');
@@ -386,9 +343,7 @@ $('runBtn').addEventListener('click', async () => {
   const transcript = $('transcript').value.trim();
   const level = parseInt(levelSlider.value, 10);
   const model = $('model').value;
-  const apiKey = getApiKey();
 
-  if (!apiKey){ setStatus('No API key set — click the gear icon top right to add one.', true); return; }
   if (!transcript){ setStatus('Paste a transcript first.', true); return; }
 
   const runBtn = $('runBtn');
@@ -397,30 +352,27 @@ $('runBtn').addEventListener('click', async () => {
   const startedAt = Date.now();
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch(RELAY_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: model,
-        max_tokens: 2000,
+        max_tokens: 4000,
         system: ENGINE_PROMPT,
-        messages: [{ role: 'user', content: `LEVEL: ${level}\n\nTRANSCRIPT:\n${transcript}` }]
+        userContent: `LEVEL: ${level}\n\nTRANSCRIPT:\n${transcript}`
       })
     });
 
-    if (!resp.ok){
-      const errText = await resp.text();
-      throw new Error(`API error ${resp.status}: ${errText.slice(0,300)}`);
-    }
+    const data = await resp.json().catch(() => null);
 
-    const data = await resp.json();
+    if (!resp.ok){
+      const detail = (data && (data.error?.message || data.error)) || `HTTP ${resp.status}`;
+      throw new Error(String(detail));
+    }
+    if (!data){ throw new Error('The relay returned something unreadable.'); }
+
     const textBlock = (data.content || []).find(b => b.type === 'text');
-    if (!textBlock) throw new Error('No text content in response.');
+    if (!textBlock) throw new Error('No text content in the response.');
 
     let cleaned = textBlock.text.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
     let parsed;
@@ -440,7 +392,7 @@ $('runBtn').addEventListener('click', async () => {
 
   } catch(err){
     console.error(err);
-    setStatus(err.message + ' — if this is a CORS/network error, you may be on a network that blocks direct browser calls; a small relay may be needed.', true);
+    setStatus(err.message + ' — if this keeps happening, tell Chris; the relay may need checking.', true);
   } finally {
     runBtn.disabled = false;
   }
